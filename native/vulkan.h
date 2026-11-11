@@ -77,6 +77,13 @@ static void check(VkResult result) {
     throw std::runtime_error("Vulkan error " + std::to_string(result));
 }
 
+static bool hasExtension(const std::vector<VkExtensionProperties> &extensions,
+                         const char *name) {
+  return std::any_of(extensions.begin(), extensions.end(), [&](const auto &extension) {
+    return std::strcmp(extension.extensionName, name) == 0;
+  });
+}
+
 static PFN_vkGetInstanceProcAddr vulkanLoader() {
   static const Library library(
 #if defined(_WIN32)
@@ -291,6 +298,28 @@ private:
 
     VkInstanceCreateInfo info{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
     info.pApplicationInfo = &app;
+    // MoltenVK and other layered drivers are only listed when the application
+    // opts into portability enumeration.
+    // VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR, absent from older headers.
+    constexpr VkInstanceCreateFlags enumeratePortability = 0x00000001;
+    const char *portabilityEnumeration = "VK_KHR_portability_enumeration";
+    auto vkEnumerateInstanceExtensionProperties =
+        reinterpret_cast<PFN_vkEnumerateInstanceExtensionProperties>(
+            vulkanLoader()(VK_NULL_HANDLE, "vkEnumerateInstanceExtensionProperties"));
+    if (vkEnumerateInstanceExtensionProperties) {
+      uint32_t extensionCount = 0;
+      if (vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr) ==
+          VK_SUCCESS) {
+        std::vector<VkExtensionProperties> extensions(extensionCount);
+        if (vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount,
+                                                   extensions.data()) == VK_SUCCESS &&
+            hasExtension(extensions, portabilityEnumeration)) {
+          info.flags |= enumeratePortability;
+          info.enabledExtensionCount = 1;
+          info.ppEnabledExtensionNames = &portabilityEnumeration;
+        }
+      }
+    }
     check(vkCreateInstance(&info, nullptr, &instance));
     loadFunctions();
     uint32_t count = 0;
@@ -339,19 +368,15 @@ private:
     const char *subgroupExtension = VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME;
     VkPhysicalDeviceSubgroupSizeControlFeaturesEXT subgroupFeatures{
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_FEATURES_EXT};
+    uint32_t extensionCount = 0;
+    check(vkEnumerateDeviceExtensionProperties(physical, nullptr, &extensionCount,
+                                               nullptr));
+    std::vector<VkExtensionProperties> extensions(extensionCount);
+    check(vkEnumerateDeviceExtensionProperties(physical, nullptr, &extensionCount,
+                                               extensions.data()));
     if (options.mode == 0 && selected.vendorID == 0x1002 &&
         vkGetPhysicalDeviceFeatures2 && vkGetPhysicalDeviceProperties2) {
-      uint32_t extensionCount = 0;
-      check(vkEnumerateDeviceExtensionProperties(physical, nullptr, &extensionCount,
-                                                 nullptr));
-      std::vector<VkExtensionProperties> extensions(extensionCount);
-      check(vkEnumerateDeviceExtensionProperties(physical, nullptr, &extensionCount,
-                                                 extensions.data()));
-      const bool supported =
-          std::any_of(extensions.begin(), extensions.end(), [&](const auto &extension) {
-            return std::strcmp(extension.extensionName, subgroupExtension) == 0;
-          });
-      if (supported) {
+      if (hasExtension(extensions, subgroupExtension)) {
         VkPhysicalDeviceFeatures2 available{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
         available.pNext = &subgroupFeatures;
         vkGetPhysicalDeviceFeatures2(physical, &available);
@@ -383,11 +408,16 @@ private:
     d.queueCreateInfoCount = 1;
     d.pQueueCreateInfos = &q;
     d.pEnabledFeatures = &features;
+    std::vector<const char *> enabled;
     if (requiredSubgroupSize) {
       d.pNext = &subgroupFeatures;
-      d.enabledExtensionCount = 1;
-      d.ppEnabledExtensionNames = &subgroupExtension;
+      enabled.push_back(subgroupExtension);
     }
+    // Portability drivers such as MoltenVK require this extension when listed.
+    if (hasExtension(extensions, "VK_KHR_portability_subset"))
+      enabled.push_back("VK_KHR_portability_subset");
+    d.enabledExtensionCount = uint32_t(enabled.size());
+    d.ppEnabledExtensionNames = enabled.data();
     check(vkCreateDevice(physical, &d, nullptr, &device));
     vkGetDeviceQueue(device, family, 0, &queue);
     for (uint32_t i = 0; i < buffers.size(); i++) {

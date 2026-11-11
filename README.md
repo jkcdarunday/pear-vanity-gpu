@@ -92,7 +92,8 @@ only public kernel code, are keyed by the kernel source, build options, runtime,
 driver and device, and carry a BLAKE2b checksum. The directory and files are
 created owner-only; entries that are corrupt, foreign-owned or writable by others
 are ignored and rebuilt. Caching is best effort: an unwritable directory only costs
-compile time (about 1.5s for touch on the reference host).
+compile time (about 1.5s for touch on the reference host). Windows does not cache
+kernels yet, so OpenCL and HIP compile on every run there.
 
 Software adapters (llvmpipe, PoCL or CPU OpenCL runtimes) are excluded unless
 explicitly enabled with `allowSoftware: true` for testing. Prebuilding regenerates

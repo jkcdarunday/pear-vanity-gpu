@@ -26,7 +26,7 @@
   "scripts": {
     "test": "bare test/vanity.test.js",
     "build": "cmake -S . -B out/addon -DCMAKE_BUILD_TYPE=Release && cmake --build out/addon --config Release",
-    "prebuild": "npm run build && cmake --install out/addon --prefix prebuilds && bare scripts/configure-prebuilds.js",
+    "prebuild": "npm run build && cmake --install out/addon --config Release --prefix prebuilds && bare scripts/configure-prebuilds.js",
     "benchmark": "bare scripts/benchmark.js",
     "lint": "npm run lint:js && npm run lint:native",
     "format": "prettier --write . && lunte --fix && npm run format:native",
@@ -34,7 +34,7 @@
     "lint:native": "clang-format --dry-run --Werror binding.cc native/*.h native/search.comp test/native.cc",
     "format:native": "clang-format -i binding.cc native/*.h native/search.comp test/native.cc",
     "pack": "bare scripts/configure-prebuilds.js && npm pack",
-    "test:native": "cmake -S . -B out/addon -DVANITY_TESTS=ON && cmake --build out/addon --config Release && ctest --test-dir out/addon --output-on-failure"
+    "test:native": "cmake -S . -B out/addon -DVANITY_TESTS=ON && cmake --build out/addon --config Release && ctest --test-dir out/addon -C Release --output-on-failure"
   },
   "dependencies": {
     "bare-os": "^3.9.3",

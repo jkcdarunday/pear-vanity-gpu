@@ -328,8 +328,13 @@ test('benchmark and cache options are validated before loading an addon', async 
 
   const gpu = require('../lib/gpu')
   t.is(gpu.cacheDirectory(false), '')
-  t.is(gpu.cacheDirectory('/explicit/cache'), '/explicit/cache')
-  t.ok(gpu.cacheDirectory().endsWith('pear-vanity-gpu'))
+  if (os.platform() === 'win32') {
+    t.is(gpu.cacheDirectory('/explicit/cache'), '', 'Windows never caches kernels')
+    t.is(gpu.cacheDirectory(), '', 'Windows never caches kernels')
+  } else {
+    t.is(gpu.cacheDirectory('/explicit/cache'), '/explicit/cache')
+    t.ok(gpu.cacheDirectory().endsWith('pear-vanity-gpu'))
+  }
   t.is(gpu.cacheDirectory('/' + 'a'.repeat(gpu.cacheLimit)), '', 'oversized paths disable caching')
 })
 
@@ -429,7 +434,9 @@ for (const { backend, label, enabled, options: gpuOptions } of gpuBackends) {
 
   test(
     `${label} seed derivation covers both pipeline slots and the maximum touch batch`,
-    { skip },
+    // A maximum batch takes well under a second on a GPU but can exceed the
+    // default 30s on software drivers on small CI runners.
+    { skip, timeout: 180000 },
     async (t) => {
       // Two small batches exercise both pipeline slots; one maximum batch covers
       // the largest dispatch.
