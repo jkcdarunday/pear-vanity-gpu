@@ -1,0 +1,439 @@
+#version 450
+#extension GL_ARB_gpu_shader_int64 : require
+#extension GL_GOOGLE_include_directive : require
+
+// Point formulas follow TweetNaCl; fields use the ref10 radix-2^25.5.
+// https://tweetnacl.cr.yp.to/ (20140427)
+layout(local_size_x = 64) in;
+
+layout(binding = 0, std430) readonly buffer Config { uint cfg[]; };
+
+layout(binding = 1, std430) readonly buffer Table { uint table[]; };
+
+layout(binding = 2, std430) buffer Results {
+  uint winner;
+  uint results[];
+};
+
+layout(push_constant) uniform Parameters {
+  uint mode, count, templateLen, namespaceLen, offsetCount, targetLen, counterLow,
+      counterHigh, diagnosticCount;
+}
+
+p;
+
+#if TOUCH
+
+// Original ChaCha20: fresh 256-bit search key, zero nonce, 64-bit block counter.
+// SHA-512 follows FIPS 180-4; CPU samples use libsodium independently.
+uint rotate32(uint x, uint n) { return (x << n) | (x >> (32 - n)); }
+
+void quarter(inout uint x[16], int a, int b, int c, int d) {
+  x[a] += x[b];
+  x[d] = rotate32(x[d] ^ x[a], 16);
+  x[c] += x[d];
+  x[b] = rotate32(x[b] ^ x[c], 12);
+  x[a] += x[b];
+  x[d] = rotate32(x[d] ^ x[a], 8);
+  x[c] += x[d];
+  x[b] = rotate32(x[b] ^ x[c], 7);
+}
+
+uint swap32(uint x) {
+  return (x << 24) | ((x & 0xff00) << 8) | ((x >> 8) & 0xff00) | (x >> 24);
+}
+
+uint64_t rotateSHA(uint64_t x, uint n) { return (x >> n) | (x << (64 - n)); }
+
+const uint64_t SHA_INITIAL[8] =
+    uint64_t[](0x6a09e667f3bcc908ul, 0xbb67ae8584caa73bul, 0x3c6ef372fe94f82bul,
+               0xa54ff53a5f1d36f1ul, 0x510e527fade682d1ul, 0x9b05688c2b3e6c1ful,
+               0x1f83d9abfb41bd6bul, 0x5be0cd19137e2179ul);
+
+const uint64_t SHA_K[80] =
+    uint64_t[](0x428a2f98d728ae22ul, 0x7137449123ef65cdul, 0xb5c0fbcfec4d3b2ful,
+               0xe9b5dba58189dbbcul, 0x3956c25bf348b538ul, 0x59f111f1b605d019ul,
+               0x923f82a4af194f9bul, 0xab1c5ed5da6d8118ul, 0xd807aa98a3030242ul,
+               0x12835b0145706fbeul, 0x243185be4ee4b28cul, 0x550c7dc3d5ffb4e2ul,
+               0x72be5d74f27b896ful, 0x80deb1fe3b1696b1ul, 0x9bdc06a725c71235ul,
+               0xc19bf174cf692694ul, 0xe49b69c19ef14ad2ul, 0xefbe4786384f25e3ul,
+               0x0fc19dc68b8cd5b5ul, 0x240ca1cc77ac9c65ul, 0x2de92c6f592b0275ul,
+               0x4a7484aa6ea6e483ul, 0x5cb0a9dcbd41fbd4ul, 0x76f988da831153b5ul,
+               0x983e5152ee66dfabul, 0xa831c66d2db43210ul, 0xb00327c898fb213ful,
+               0xbf597fc7beef0ee4ul, 0xc6e00bf33da88fc2ul, 0xd5a79147930aa725ul,
+               0x06ca6351e003826ful, 0x142929670a0e6e70ul, 0x27b70a8546d22ffcul,
+               0x2e1b21385c26c926ul, 0x4d2c6dfc5ac42aedul, 0x53380d139d95b3dful,
+               0x650a73548baf63deul, 0x766a0abb3c77b2a8ul, 0x81c2c92e47edaee6ul,
+               0x92722c851482353bul, 0xa2bfe8a14cf10364ul, 0xa81a664bbc423001ul,
+               0xc24b8b70d0f89791ul, 0xc76c51a30654be30ul, 0xd192e819d6ef5218ul,
+               0xd69906245565a910ul, 0xf40e35855771202aul, 0x106aa07032bbd1b8ul,
+               0x19a4c116b8d2d0c8ul, 0x1e376c085141ab53ul, 0x2748774cdf8eeb99ul,
+               0x34b0bcb5e19b48a8ul, 0x391c0cb3c5c95a63ul, 0x4ed8aa4ae3418acbul,
+               0x5b9cca4f7763e373ul, 0x682e6ff3d6b2b8a3ul, 0x748f82ee5defb2fcul,
+               0x78a5636f43172f60ul, 0x84c87814a1f0ab72ul, 0x8cc702081a6439ecul,
+               0x90befffa23631e28ul, 0xa4506cebde82bde9ul, 0xbef9a3f7b2c67915ul,
+               0xc67178f2e372532bul, 0xca273eceea26619cul, 0xd186b8c721c0c207ul,
+               0xeada7dd6cde0eb1eul, 0xf57d4f7fee6ed178ul, 0x06f067aa72176fbaul,
+               0x0a637dc5a2c898a6ul, 0x113f9804bef90daeul, 0x1b710b35131c471bul,
+               0x28db77f523047d84ul, 0x32caab7b40c72493ul, 0x3c9ebe0a15c9bebcul,
+               0x431d67c49c100d4cul, 0x4cc5d4becb3e42b6ul, 0x597f299cfc657e2aul,
+               0x5fcb6fab3ad6faecul, 0x6c44198c4a475817ul);
+
+void candidateScalar(uint64_t counter, out uint scalar[8]) {
+  uint initial[16] =
+      uint[](0x61707865, 0x3320646e, 0x79622d32, 0x6b206574, cfg[6224], cfg[6225],
+             cfg[6226], cfg[6227], cfg[6228], cfg[6229], cfg[6230], cfg[6231],
+             uint(counter), uint(counter >> 32), 0, 0);
+  uint x[16] = initial;
+
+  for (int i = 0; i < 10; i++) {
+    quarter(x, 0, 4, 8, 12);
+    quarter(x, 1, 5, 9, 13);
+    quarter(x, 2, 6, 10, 14);
+    quarter(x, 3, 7, 11, 15);
+    quarter(x, 0, 5, 10, 15);
+    quarter(x, 1, 6, 11, 12);
+    quarter(x, 2, 7, 8, 13);
+    quarter(x, 3, 4, 9, 14);
+  }
+
+  uint64_t w[16];
+  for (int i = 0; i < 4; i++) {
+    w[i] = (uint64_t(swap32(x[2 * i] + initial[2 * i])) << 32) |
+           uint64_t(swap32(x[2 * i + 1] + initial[2 * i + 1]));
+  }
+  w[4] = 0x8000000000000000ul;
+  for (int i = 5; i < 15; i++)
+    w[i] = 0;
+  w[15] = 256;
+
+  uint64_t a = SHA_INITIAL[0], b = SHA_INITIAL[1], c = SHA_INITIAL[2], d = SHA_INITIAL[3];
+  uint64_t e = SHA_INITIAL[4], f = SHA_INITIAL[5], g = SHA_INITIAL[6], h = SHA_INITIAL[7];
+
+  for (int i = 0; i < 80; i++) {
+    if (i >= 16) {
+      uint64_t u = w[(i + 1) & 15], v = w[(i + 14) & 15];
+      w[i & 15] += (rotateSHA(u, 1) ^ rotateSHA(u, 8) ^ (u >> 7)) + w[(i + 9) & 15] +
+                   (rotateSHA(v, 19) ^ rotateSHA(v, 61) ^ (v >> 6));
+    }
+    uint64_t first = h + (rotateSHA(e, 14) ^ rotateSHA(e, 18) ^ rotateSHA(e, 41)) +
+                     ((e & f) ^ (~e & g)) + SHA_K[i] + w[i & 15];
+    uint64_t second = (rotateSHA(a, 28) ^ rotateSHA(a, 34) ^ rotateSHA(a, 39)) +
+                      ((a & b) ^ (a & c) ^ (b & c));
+    h = g;
+    g = f;
+    f = e;
+    e = d + first;
+    d = c;
+    c = b;
+    b = a;
+    a = first + second;
+  }
+
+  uint64_t digest[4] = uint64_t[](a + SHA_INITIAL[0], b + SHA_INITIAL[1],
+                                  c + SHA_INITIAL[2], d + SHA_INITIAL[3]);
+  for (int i = 0; i < 4; i++) {
+    scalar[2 * i] = swap32(uint(digest[i] >> 32));
+    scalar[2 * i + 1] = swap32(uint(digest[i]));
+  }
+  scalar[0] &= 0xfffffff8;
+  scalar[7] = (scalar[7] & 0x7fffffff) | 0x40000000;
+}
+
+struct Field {
+  int v[10];
+};
+
+struct Point {
+  Field x, y, z, t;
+};
+
+Field zero() {
+  Field a;
+  for (int i = 0; i < 10; i++)
+    a.v[i] = 0;
+
+  return a;
+}
+
+Field one() {
+  Field a = zero();
+  a.v[0] = 1;
+
+  return a;
+}
+
+Field plus(Field a, Field b) {
+  for (int i = 0; i < 10; i++)
+    a.v[i] += b.v[i];
+
+  return a;
+}
+
+Field minus(Field a, Field b) {
+  for (int i = 0; i < 10; i++)
+    a.v[i] -= b.v[i];
+
+  return a;
+}
+
+Field carry(Field a) {
+  for (int i = 0; i < 10; i++) {
+    int bits = i % 2 == 0 ? 26 : 25;
+    a.v[i] += 1 << bits;
+    int c = a.v[i] >> bits;
+
+    if (i < 9)
+      a.v[i + 1] += c - 1;
+    else
+      a.v[0] += 19 * (c - 1);
+
+    a.v[i] -= c * (1 << bits);
+  }
+
+  return a;
+}
+
+// Generated straight-line 32x32 products with 64-bit accumulators and a
+// symmetric square. No dynamically indexed convolution scratch arrays.
+#include "field.glsl"
+
+Field squares(Field a, int count) {
+  for (int i = 0; i < count; i++)
+    a = square(a);
+
+  return a;
+}
+
+// z^(2^255-21): 254 squarings and 11 multiplications, versus 252 multiplies
+// in the binary exponentiation path. The intermediate exponents are 2^n-1.
+Field inverse(Field z) {
+  Field z2 = square(z);
+  Field z9 = mul(squares(z2, 2), z);
+  Field z11 = mul(z9, z2);
+  Field z5 = mul(square(z11), z9);
+  Field z10 = mul(squares(z5, 5), z5);
+  Field z20 = mul(squares(z10, 10), z10);
+  Field z40 = mul(squares(z20, 20), z20);
+  Field z50 = mul(squares(z40, 10), z10);
+  Field z100 = mul(squares(z50, 50), z50);
+  Field z200 = mul(squares(z100, 100), z100);
+  Field z250 = mul(squares(z200, 50), z50);
+
+  return mul(squares(z250, 5), z11);
+}
+
+Field canonical(Field a) {
+  a = carry(carry(carry(a)));
+
+  for (int j = 0; j < 2; j++) {
+    Field m = a;
+    m.v[0] -= 0x3ffffed;
+
+    for (int i = 1; i < 10; i++) {
+      int previousBits = i % 2 == 0 ? 25 : 26;
+      int bits = i % 2 == 0 ? 26 : 25;
+      m.v[i] -= ((1 << bits) - 1) + ((m.v[i - 1] >> previousBits) & 1);
+      m.v[i - 1] &= (1 << previousBits) - 1;
+    }
+
+    if (((m.v[9] >> 25) & 1) == 0)
+      a = m;
+  }
+
+  return a;
+}
+
+Point identity() { return Point(zero(), one(), one(), zero()); }
+
+// Affine cached-point addition needs seven field multiplications; the old
+// extended-point path needed nine. The cached table folds in the curve
+// constant.
+Field tableField(uint window, uint coordinate, uint digit) {
+  Field value;
+  for (uint limb = 0; limb < 10; limb++)
+    value.v[limb] = int(table[((window * 3 + coordinate) * 10 + limb) * 129 + digit]);
+  return value;
+}
+
+Point addCached(Point p1, uint window, int digit) {
+  uint magnitude = uint(abs(digit));
+  Field ymx = tableField(window, digit < 0 ? 1 : 0, magnitude);
+  Field ypx = tableField(window, digit < 0 ? 0 : 1, magnitude);
+  Field xy2d = tableField(window, 2, magnitude);
+  if (digit < 0)
+    xy2d = minus(zero(), xy2d);
+  Field a = mul(minus(p1.y, p1.x), ymx);
+  Field b = mul(plus(p1.x, p1.y), ypx);
+  Field c = mul(p1.t, xy2d);
+  Field dd = plus(p1.z, p1.z);
+  Field e = minus(b, a), f = minus(dd, c), g = plus(dd, c), h = plus(b, a);
+
+  return Point(mul(e, f), mul(h, g), mul(g, f), mul(e, h));
+}
+
+void publicKey(uint scalar[8], out uint pk[8]) {
+  Point q = identity();
+  int carryDigit = 0;
+
+  for (uint w = 0; w < 32; w++) {
+    int digit = int((scalar[w / 4] >> ((w % 4) * 8)) & 255) + carryDigit;
+    carryDigit = (digit + 128) >> 8;
+    if (w < 31)
+      digit -= carryDigit * 256;
+    q = addCached(q, w, digit);
+  }
+
+  Field iz = inverse(q.z), x = canonical(mul(q.x, iz)), y = canonical(mul(q.y, iz));
+  pack(y, pk);
+
+  pk[7] ^= uint(x.v[0] & 1) << 31;
+}
+
+#endif
+
+const uint64_t IV[8] =
+    uint64_t[](0x6a09e667f3bcc908ul, 0xbb67ae8584caa73bul, 0x3c6ef372fe94f82bul,
+               0xa54ff53a5f1d36f1ul, 0x510e527fade682d1ul, 0x9b05688c2b3e6c1ful,
+               0x1f83d9abfb41bd6bul, 0x5be0cd19137e2179ul);
+
+const uint SIGMA[192] = uint[](
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 14, 10, 4, 8, 9, 15, 13, 6, 1,
+    12, 0, 2, 11, 7, 5, 3, 11, 8, 12, 0, 5, 2, 15, 13, 10, 14, 3, 6, 7, 1, 9, 4, 7, 9, 3,
+    1, 13, 12, 11, 14, 2, 6, 5, 10, 4, 0, 15, 8, 9, 0, 5, 7, 2, 4, 10, 15, 14, 1, 11, 12,
+    6, 8, 3, 13, 2, 12, 6, 10, 0, 11, 8, 3, 4, 13, 7, 5, 15, 14, 1, 9, 12, 5, 1, 15, 14,
+    13, 4, 10, 0, 7, 6, 3, 9, 2, 8, 11, 13, 11, 7, 14, 12, 1, 3, 9, 5, 0, 15, 4, 8, 6, 2,
+    10, 6, 15, 14, 9, 11, 3, 0, 8, 12, 2, 13, 7, 1, 4, 10, 5, 10, 2, 8, 4, 7, 6, 1, 5, 15,
+    11, 9, 14, 3, 12, 13, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 14, 10,
+    4, 8, 9, 15, 13, 6, 1, 12, 0, 2, 11, 7, 5, 3);
+
+uint64_t rotate64(uint64_t x, uint n) { return (x >> n) | (x << (64 - n)); }
+
+void mix(inout uint64_t v[16], int a, int b, int c, int d, uint64_t x, uint64_t y) {
+  v[a] += v[b] + x;
+  v[d] = rotate64(v[d] ^ v[a], 32);
+  v[c] += v[d];
+  v[b] = rotate64(v[b] ^ v[c], 24);
+  v[a] += v[b] + y;
+  v[d] = rotate64(v[d] ^ v[a], 16);
+  v[c] += v[d];
+  v[b] = rotate64(v[b] ^ v[c], 63);
+}
+
+// Stream bytes directly from the template, patching a public key or namespace
+// digest.
+uint inputByte(uint pos, bool ns, uint replacement[8], uint64_t counter) {
+  if (ns) {
+    if (pos < p.namespaceLen)
+      return cfg[4096 + pos];
+
+    uint nibble = uint(counter >> ((15 - (pos - p.namespaceLen)) * 4)) & 15;
+    return nibble < 10 ? 48 + nibble : 97 + nibble - 10;
+  }
+
+  // A byte-to-patch lookup avoids scanning every signer for each input byte.
+  uint tag = cfg[6260 + pos];
+  if (tag == 0)
+    return cfg[pos];
+
+  uint byte = tag - 1;
+  return (replacement[byte / 4] >> ((byte % 4) * 8)) & 255;
+}
+
+void hashBytes(bool ns, uint replacement[8], uint64_t counter, out uint digest[8]) {
+  uint len = ns ? p.namespaceLen + 16 : p.templateLen;
+  uint64_t h[8];
+  for (int i = 0; i < 8; i++)
+    h[i] = IV[i];
+  h[0] ^= 0x01010020ul;
+
+  for (uint off = 0; off < len; off += 128) {
+    uint64_t m[16];
+    for (int i = 0; i < 16; i++)
+      m[i] = 0;
+
+    uint used = min(128, len - off);
+    for (uint i = 0; i < used; i++)
+      m[i / 8] |= uint64_t(inputByte(off + i, ns, replacement, counter)) << ((i % 8) * 8);
+
+    uint64_t v[16];
+    for (int i = 0; i < 8; i++) {
+      v[i] = h[i];
+      v[i + 8] = IV[i];
+    }
+
+    v[12] ^= uint64_t(off + used);
+    if (off + used == len)
+      v[14] = ~v[14];
+
+    for (int r = 0; r < 12; r++) {
+      int s = r * 16;
+      mix(v, 0, 4, 8, 12, m[SIGMA[s]], m[SIGMA[s + 1]]);
+      mix(v, 1, 5, 9, 13, m[SIGMA[s + 2]], m[SIGMA[s + 3]]);
+      mix(v, 2, 6, 10, 14, m[SIGMA[s + 4]], m[SIGMA[s + 5]]);
+      mix(v, 3, 7, 11, 15, m[SIGMA[s + 6]], m[SIGMA[s + 7]]);
+      mix(v, 0, 5, 10, 15, m[SIGMA[s + 8]], m[SIGMA[s + 9]]);
+      mix(v, 1, 6, 11, 12, m[SIGMA[s + 10]], m[SIGMA[s + 11]]);
+      mix(v, 2, 7, 8, 13, m[SIGMA[s + 12]], m[SIGMA[s + 13]]);
+      mix(v, 3, 4, 9, 14, m[SIGMA[s + 14]], m[SIGMA[s + 15]]);
+    }
+
+    for (int i = 0; i < 8; i++)
+      h[i] ^= v[i] ^ v[i + 8];
+  }
+
+  for (uint i = 0; i < 8; i++)
+    digest[i] = uint(h[i / 2] >> ((i % 2) * 32));
+}
+
+void storeResult(uint slot, uint replacement[8], uint digest[8]) {
+  for (uint i = 0; i < 8; i++) {
+    results[slot * 16 + i] = replacement[i];
+    results[slot * 16 + 8 + i] = digest[i];
+  }
+}
+
+void main() {
+  uint id = gl_GlobalInvocationID.x;
+  if (id >= p.count)
+    return;
+
+  uint replacement[8], digest[8];
+  for (int i = 0; i < 8; i++)
+    replacement[i] = 0;
+
+  uint64_t counter = (uint64_t(p.counterHigh) << 32) + p.counterLow + id;
+
+#if TOUCH
+  uint scalar[8];
+  candidateScalar(counter, scalar);
+  publicKey(scalar, replacement);
+#else
+  {
+    uint unused[8] = replacement;
+    hashBytes(true, unused, counter, replacement);
+  }
+#endif
+
+  hashBytes(false, replacement, counter, digest);
+
+  if (p.diagnosticCount != 0) {
+    // Spread eight samples across the dispatch, including its final active
+    // lane.
+    uint slot = min(7, (id * 7 + p.count - 2) / (p.count - 1));
+    if (slot * (p.count - 1) / 7 == id)
+      storeResult(slot, replacement, digest);
+  }
+
+  // Prefix masks compare packed hash words directly, avoiding z32 encoding
+  // and byte arrays in every invocation. Only the prefix's words are examined.
+  uint words = min(8, (p.targetLen * 5 + 31) / 32);
+  for (uint i = 0; i < words; i++)
+    if (((digest[i] ^ cfg[6216 + i]) & cfg[6208 + i]) != 0)
+      return;
+
+  // Only the first matching lane claims the single result slot. This avoids
+  // both full-batch readback and races between an index and its crypto output.
+  if (atomicCompSwap(winner, 0xffffffffu, id) == 0xffffffffu)
+    storeResult(8, replacement, digest);
+}
