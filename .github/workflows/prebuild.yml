@@ -46,7 +46,15 @@ jobs:
   # addon, compile the native test executable and run the CPU suite. GPU paths on
   # these platforms are exercised only on real hardware.
   prebuild-macos:
-    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            host: darwin-arm64
+          - os: macos-15-intel
+            host: darwin-x64
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -76,7 +84,7 @@ jobs:
       - run: ctest --test-dir out/addon -C Release --output-on-failure -E crypto
       - uses: actions/upload-artifact@v4
         with:
-          name: prebuild-darwin-arm64
+          name: prebuild-${{ matrix.host }}
           path: prebuilds/
           if-no-files-found: error
 

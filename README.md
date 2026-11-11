@@ -97,6 +97,7 @@ Prebuilt addons ship for these platforms; anywhere else the CPU backend still wo
 | `linux-x64` | System loader (`libvulkan.so.1`) | ICD loader (`libOpenCL.so.1`) | ROCm 6.x/7.x | All backends on an RX 7900 XTX; CI with software Vulkan and OpenCL |
 | `linux-arm64` | System loader | ICD loader | ROCm 6.x/7.x | CI with software Vulkan and OpenCL |
 | `darwin-arm64` | MoltenVK via Homebrew (`vulkan-loader`, `molten-vk`) | Apple OpenCL framework | Not available | CI builds, loads the addon and runs the CPU suite; no GPU run yet |
+| `darwin-x64` | MoltenVK via Homebrew (`vulkan-loader`, `molten-vk`) | Apple OpenCL framework | Not available | CI builds, loads the addon and runs the CPU suite; no GPU run yet |
 | `win32-x64` | `vulkan-1.dll` from the GPU driver | `OpenCL.dll` from the GPU driver | AMD HIP SDK 6.x/7.x | CI builds, loads the addon and runs the CPU suite; no GPU run yet |
 
 On macOS the Vulkan loader is looked up only in `/opt/homebrew/lib` and
@@ -332,9 +333,9 @@ Formatting uses Prettier and Lunte for JavaScript and clang-format for C++/GLSL.
 The `Bare tests` workflow runs the CPU suite on Linux, macOS and Windows. The
 `Prebuilds` workflow builds Linux x64 and arm64 addons in Ubuntu 22.04 containers
 and tests them with software Vulkan (llvmpipe), software OpenCL (PoCL), native
-cryptographic regression checks and a linkage check. It also builds macOS arm64 and
+cryptographic regression checks and a linkage check. It also builds macOS arm64, macOS x64 and
 Windows x64 addons, loads each one with `test/probe-addon.js` and runs the CPU
-suite there, then packs all four into a `release-candidate` tarball artifact. HIP
+suite there, then packs all five into a `release-candidate` tarball artifact. HIP
 requires AMD hardware and must be validated outside hosted CI with
 `PEAR_TEST_HIP=1 npm test` and `VANITY_NATIVE_BACKENDS=hip npm run test:native`.
 
