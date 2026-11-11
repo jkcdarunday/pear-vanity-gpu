@@ -145,7 +145,9 @@ exports.call = function call(entry, method, args, options) {
       {
         cwd: root,
         shell: bare.shell,
-        stdio: ['pipe', 'pipe', 'inherit'],
+        // Bare's pipes need overlapped handles on Windows; with plain pipes
+        // the child's stdout writes never complete.
+        stdio: ['overlapped', 'overlapped', 'inherit'],
         windowsHide: true
       }
     )
