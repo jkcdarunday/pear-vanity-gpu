@@ -66,11 +66,12 @@ const checked = new Map()
 function checkVersion(bare) {
   if (checked.has(bare.command)) return checked.get(bare.command)
 
-  const result = childProcess.spawnSync(
-    bare.shell ? `"${bare.command}"` : bare.command,
-    ['--version'],
-    { shell: bare.shell, encoding: 'utf8', timeout: 15000, windowsHide: true }
-  )
+  const result = childProcess.spawnSync(...command(bare, '--version'), {
+    shell: bare.shell,
+    encoding: 'utf8',
+    timeout: 15000,
+    windowsHide: true
+  })
   const match = /(\d+)\.(\d+)\.(\d+)/.exec(String(result.stdout || ''))
   let err = null
 
@@ -94,6 +95,12 @@ function checkVersion(bare) {
   checked.set(bare.command, err)
 
   return err
+}
+
+// Shell launches take one quoted command string: Node deprecates passing an
+// argument array with `shell: true` (DEP0190). Arguments here are fixed literals.
+function command(bare, argument) {
+  return bare.shell ? [`"${bare.command}" ${argument}`] : [bare.command, [argument]]
 }
 
 function compare(left, right) {
@@ -139,18 +146,14 @@ exports.call = function call(entry, method, args, options) {
 
     // The host script is passed relative to the package directory, so no path
     // ever needs shell quoting when a Windows .cmd shim is used.
-    const child = childProcess.spawn(
-      bare.shell ? `"${bare.command}"` : bare.command,
-      ['lib/host.js'],
-      {
-        cwd: root,
-        shell: bare.shell,
-        // Bare's pipes need overlapped handles on Windows; with plain pipes
-        // the child's stdout writes never complete.
-        stdio: ['overlapped', 'overlapped', 'inherit'],
-        windowsHide: true
-      }
-    )
+    const child = childProcess.spawn(...command(bare, 'lib/host.js'), {
+      cwd: root,
+      shell: bare.shell,
+      // Bare's pipes need overlapped handles on Windows; with plain pipes
+      // the child's stdout writes never complete.
+      stdio: ['overlapped', 'overlapped', 'inherit'],
+      windowsHide: true
+    })
 
     let buffered = ''
     let settled = false

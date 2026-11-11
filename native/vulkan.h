@@ -73,8 +73,36 @@
   X(vkDeviceWaitIdle)
 
 static void check(VkResult result) {
-  if (result != VK_SUCCESS)
-    throw std::runtime_error("Vulkan error " + std::to_string(result));
+  if (result == VK_SUCCESS)
+    return;
+  const char *meaning = nullptr;
+  switch (result) {
+  case VK_ERROR_INCOMPATIBLE_DRIVER:
+    meaning = "no compatible Vulkan driver is installed";
+    break;
+  case VK_ERROR_INITIALIZATION_FAILED:
+    meaning = "the Vulkan driver failed to initialize";
+    break;
+  case VK_ERROR_EXTENSION_NOT_PRESENT:
+    meaning = "a required Vulkan extension is missing";
+    break;
+  case VK_ERROR_FEATURE_NOT_PRESENT:
+    meaning = "a required Vulkan feature is missing";
+    break;
+  case VK_ERROR_OUT_OF_HOST_MEMORY:
+    meaning = "out of host memory";
+    break;
+  case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+    meaning = "out of GPU memory";
+    break;
+  case VK_ERROR_DEVICE_LOST:
+    meaning = "the GPU device was lost";
+    break;
+  default:
+    break;
+  }
+  throw std::runtime_error("Vulkan error " + std::to_string(result) +
+                           (meaning ? std::string(": ") + meaning : std::string()));
 }
 
 static bool hasExtension(const std::vector<VkExtensionProperties> &extensions,
