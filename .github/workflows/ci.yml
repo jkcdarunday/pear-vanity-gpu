@@ -1,0 +1,29 @@
+name: Bare tests
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm rebuild bare-runtime --ignore-scripts
+      - run: npm run lint:js
+      - run: npm test
+      - run: npm run pack
+      - name: Install packed production dependencies
+        run: >-
+          node -e "const p = require('./package.json');
+          require('child_process').execSync('npm install --prefix out/consumer --omit=dev --ignore-scripts ./'+p.name+'-'+p.version+'.tgz', {stdio: 'inherit'})"
+      - name: Check installed package
+        run: >-
+          npm exec -- bare --eval
+          "require('./out/consumer/node_modules/pear-vanity-gpu')('', 'touch', undefined, { workers: 1 }).then(pair => { if (pair.publicKey.length !== 32) throw new Error('Invalid public key') }).catch(err => { console.error(err); Bare.exitCode = 1 })"

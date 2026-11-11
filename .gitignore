@@ -1,4 +1,19 @@
+# Build and package outputs
 node_modules/
 out/
+build/
 prebuilds/*/
 *.tgz
+compile_commands.json
+
+# Local-only notes
+AGENTS.md
+CLAUDE.md
+.claude/
+
+# Editors and OS files
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

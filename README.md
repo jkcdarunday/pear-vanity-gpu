@@ -245,7 +245,7 @@ Point CMake at them with `-DVULKAN_INCLUDE_DIR`, `-DOPENCL_INCLUDE_DIR`,
 `-DGLSLANG_VALIDATOR`, `-DSODIUM_INCLUDE_DIR` and `-DSODIUM_LIBRARY`; the
 `Prebuilds` workflow shows the exact commands. On Windows use Git Bash.
 
-Run commands from `src/` in this repository.
+Run commands from the repository root.
 
 ```sh
 npm ci

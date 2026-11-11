@@ -1,0 +1,159 @@
+name: Prebuilds
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  prebuild:
+    container: ubuntu:22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            host: linux-x64
+          - os: ubuntu-24.04-arm
+            host: linux-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - run: apt-get update && apt-get install -y ca-certificates curl git build-essential python3-pip clang-format glslang-tools libvulkan-dev mesa-vulkan-drivers opencl-headers
+        working-directory: /tmp
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm rebuild bare-runtime --ignore-scripts
+      - run: python3 -m pip install 'cmake>=4,<5'
+      - run: npm run lint:native
+      - run: sh scripts/build-sodium.sh /tmp/vanity-sodium
+      - run: cmake -S . -B out/addon -DSODIUM_INCLUDE_DIR=/tmp/vanity-sodium/include -DSODIUM_LIBRARY=/tmp/vanity-sodium/lib/libsodium.a
+      - run: npm run prebuild
+      # Software Vulkan (llvmpipe). Ubuntu 22.04's PoCL 1.8 uses LLVM 13, which
+      # cannot target newer runner CPUs, so OpenCL is tested in the package job.
+      # HIP needs AMD hardware and is validated outside hosted CI.
+      - run: npm test
+        env:
+          PEAR_TEST_VULKAN: '1'
+          PEAR_TEST_VULKAN_SOFTWARE: '1'
+      - run: npm run test:native
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prebuild-${{ matrix.host }}
+          path: prebuilds/
+          if-no-files-found: error
+
+  # Hosted macOS and Windows runners have no usable GPU, so these jobs build the
+  # addon, compile the native test executable and run the CPU suite. GPU paths on
+  # these platforms are exercised only on real hardware.
+  prebuild-macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install CMake 4 and minisign
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install 'cmake>=4,<5'
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+          brew install minisign
+      - run: npm ci
+      - run: npm rebuild bare-runtime --ignore-scripts
+      - run: sh scripts/fetch-native-deps.sh "$RUNNER_TEMP/deps" darwin
+      - run: sh scripts/build-sodium.sh "$RUNNER_TEMP/sodium"
+      - run: >-
+          cmake -S . -B out/addon -DCMAKE_BUILD_TYPE=Release -DVANITY_TESTS=ON
+          -DVULKAN_INCLUDE_DIR="$RUNNER_TEMP/deps/include"
+          -DOPENCL_INCLUDE_DIR="$RUNNER_TEMP/deps/include"
+          -DGLSLANG_VALIDATOR="$RUNNER_TEMP/deps/bin/glslangValidator"
+          -DSODIUM_INCLUDE_DIR="$RUNNER_TEMP/sodium/include"
+          -DSODIUM_LIBRARY="$RUNNER_TEMP/sodium/lib/libsodium.a"
+      - run: npm run prebuild
+      - run: npm exec -- bare test/probe-addon.js
+      - run: npm test
+      # The crypto vectors need a GPU backend; the field test needs only a compiler.
+      - run: ctest --test-dir out/addon -C Release --output-on-failure -E crypto
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prebuild-darwin-arm64
+          path: prebuilds/
+          if-no-files-found: error
+
+  prebuild-windows:
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install CMake 4
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/Scripts/pip" install 'cmake>=4,<5'
+          echo "$RUNNER_TEMP/venv/Scripts" >> "$GITHUB_PATH"
+      - run: npm ci
+      - run: npm rebuild bare-runtime --ignore-scripts
+      - run: sh scripts/fetch-native-deps.sh "$(cygpath -m "$RUNNER_TEMP")/deps" win32
+      - run: >-
+          deps="$(cygpath -m "$RUNNER_TEMP")/deps" &&
+          cmake -S . -B out/addon -A x64 -DVANITY_TESTS=ON
+          -DVULKAN_INCLUDE_DIR="$deps/include"
+          -DOPENCL_INCLUDE_DIR="$deps/include"
+          -DGLSLANG_VALIDATOR="$deps/bin/glslangValidator.exe"
+          -DSODIUM_INCLUDE_DIR="$deps/sodium/include"
+          -DSODIUM_LIBRARY="$deps/sodium/lib/libsodium.lib"
+      - run: npm run prebuild
+      - run: npm exec -- bare test/probe-addon.js
+      - run: npm test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prebuild-win32-x64
+          path: prebuilds/
+          if-no-files-found: error
+
+  package:
+    needs: [prebuild, prebuild-macos, prebuild-windows]
+    # Tests the Ubuntu 22.04-built addons with newer software drivers, including
+    # PoCL for OpenCL.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: sudo apt-get update && sudo apt-get install -y libvulkan1 mesa-vulkan-drivers ocl-icd-libopencl1 pocl-opencl-icd
+      - run: npm ci
+      - run: npm rebuild bare-runtime --ignore-scripts
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: prebuild-*
+          path: prebuilds
+          merge-multiple: true
+      - run: npm run lint:js
+      - run: npm test
+        env:
+          PEAR_TEST_VULKAN: '1'
+          PEAR_TEST_VULKAN_SOFTWARE: '1'
+          PEAR_TEST_OPENCL: '1'
+          PEAR_TEST_OPENCL_SOFTWARE: '1'
+      - run: npm run pack
+      - name: Install candidate package
+        run: >-
+          node -e "const p = require('./package.json');
+          require('child_process').execSync('npm install --prefix out/consumer --omit=dev --ignore-scripts ./'+p.name+'-'+p.version+'.tgz', {stdio: 'inherit'})"
+      - name: Check installed CPU, Vulkan and OpenCL backends
+        run: >-
+          npm exec -- bare --eval
+          "const find = require('./out/consumer/node_modules/pear-vanity-gpu');
+          Promise.all(['cpu','vulkan','opencl'].map(backend => find('', 'touch', undefined, {backend, workers: 1, allowSoftware: true, cacheDirectory: false})))
+          .then(pairs => { if (pairs.some(pair => pair.publicKey.length !== 32)) throw new Error('Invalid key') })
+          .catch(err => { console.error(err); Bare.exitCode = 1 })"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-candidate
+          path: '*.tgz'
+          if-no-files-found: error
