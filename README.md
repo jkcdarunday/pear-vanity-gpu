@@ -71,6 +71,19 @@ and accepts 1 to 100000. Benchmarks never fall back to another backend or CPU.
 | `opencl` | OpenCL 1.2 ICD loader and full-profile driver | Any vendor | Kernel compiled by the driver on first use, then cached. |
 | `hip` | ROCm HIP runtime and hiprtc (6.x or 7.x) | AMD GPUs | Kernel compiled for the current GPU on first use, then cached; uses device 0 after `HIP_VISIBLE_DEVICES`. |
 
+Prebuilt addons ship for these platforms; anywhere else the CPU backend still works:
+
+| Prebuild | Vulkan | OpenCL | HIP | Validation |
+| --- | --- | --- | --- | --- |
+| `linux-x64` | System loader (`libvulkan.so.1`) | ICD loader (`libOpenCL.so.1`) | ROCm 6.x/7.x | All backends on an RX 7900 XTX; CI with software Vulkan and OpenCL |
+| `linux-arm64` | System loader | ICD loader | ROCm 6.x/7.x | CI with software Vulkan and OpenCL |
+| `darwin-arm64` | MoltenVK via Homebrew (`vulkan-loader`, `molten-vk`) | Apple OpenCL framework | Not available | CI builds, loads the addon and runs the CPU suite; no GPU run yet |
+| `win32-x64` | `vulkan-1.dll` from the GPU driver | `OpenCL.dll` from the GPU driver | AMD HIP SDK 6.x/7.x | CI builds, loads the addon and runs the CPU suite; no GPU run yet |
+
+On macOS the Vulkan loader is looked up only in `/opt/homebrew/lib` and
+`/usr/local/lib`. Hosted CI runners have no usable GPU, so the macOS and Windows
+GPU paths have not been exercised on real hardware yet.
+
 In `auto` mode, touch searches try HIP, OpenCL, then Vulkan; multisig searches
 try OpenCL, HIP, then Vulkan. This follows the measured batch throughput below.
 Each failed attempt calls `onFallback` and moves on; if every GPU backend fails,
@@ -225,6 +238,13 @@ and libsodium development files. On Debian/Ubuntu the native dependencies are
 needed: the addon declares the small HIP C ABI it loads at run time. Build-time generation uses Bare and
 `bare-fs`. Dependencies are needed only in this library's build environment.
 
+On macOS and Windows, `sh scripts/fetch-native-deps.sh /absolute/prefix darwin|win32`
+downloads checksum-pinned Vulkan and OpenCL headers, glslang and, on Windows, the
+official libsodium MSVC build (macOS builds libsodium with `scripts/build-sodium.sh`).
+Point CMake at them with `-DVULKAN_INCLUDE_DIR`, `-DOPENCL_INCLUDE_DIR`,
+`-DGLSLANG_VALIDATOR`, `-DSODIUM_INCLUDE_DIR` and `-DSODIUM_LIBRARY`; the
+`Prebuilds` workflow shows the exact commands. On Windows use Git Bash.
+
 Run commands from `src/` in this repository.
 
 ```sh
@@ -244,8 +264,8 @@ npm run pack
 ```
 
 Release prebuilds include shaders, kernel source, tables and statically linked
-libsodium. Linux also links the C++ runtime statically. The addon needs only the C
-library at load time; the system Vulkan loader, OpenCL ICD loader or ROCm runtime
+libsodium. Linux also links the C++ runtime statically, and Windows uses the static
+MSVC runtime. The addon needs only the C library at load time; the system Vulkan loader, OpenCL ICD loader or ROCm runtime
 and a matching driver are needed only for the backend that uses them.
 No install lifecycle script builds native dependencies. The tarball contains
 source plus available prebuilds, and consumers can install it directly.
@@ -289,12 +309,14 @@ without checking its runtime dependencies and compatibility baseline.
 
 Formatting uses Prettier and Lunte for JavaScript and clang-format for C++/GLSL.
 `npm run format` applies all three; `npm run lint` checks without modifying files.
-Root workflows test CPU behavior on Linux, macOS, and Windows, and build/test
-Linux x64 and arm64 addons in Ubuntu 22.04 containers with software Vulkan
-(llvmpipe), software OpenCL (PoCL), native cryptographic regression checks and a
-linkage check. HIP requires AMD hardware and must be validated outside hosted CI
-with `PEAR_TEST_HIP=1 npm test` and `VANITY_NATIVE_BACKENDS=hip npm run test:native`. These configured CI jobs still
-need to run on the hosting service before release.
+The `Bare tests` workflow runs the CPU suite on Linux, macOS and Windows. The
+`Prebuilds` workflow builds Linux x64 and arm64 addons in Ubuntu 22.04 containers
+and tests them with software Vulkan (llvmpipe), software OpenCL (PoCL), native
+cryptographic regression checks and a linkage check. It also builds macOS arm64 and
+Windows x64 addons, loads each one with `test/probe-addon.js` and runs the CPU
+suite there, then packs all four into a `release-candidate` tarball artifact. HIP
+requires AMD hardware and must be validated outside hosted CI with
+`PEAR_TEST_HIP=1 npm test` and `VANITY_NATIVE_BACKENDS=hip npm run test:native`.
 
 ## License
 
