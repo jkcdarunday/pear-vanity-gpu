@@ -9,8 +9,9 @@ the next backend and finally to Bare CPU workers.
 
 ## Usage
 
-Requires Bare 1.36.0 or newer (the validated runtime). This package does not support the Node.js runtime.
-Install with `npm install pear-vanity-gpu` and run your application with Bare.
+Install with `npm install pear-vanity-gpu`. The search runs on Bare 1.36.0 or newer,
+so Pear applications and `bare app.js` use it directly. Node.js is supported
+through a Bare child process (see [Node.js](#nodejs)).
 
 ```js
 'use strict'
@@ -46,7 +47,7 @@ secret keys and avoid logging them.
 | `workers` | CPU workers, from 1 to 256; defaults to available parallelism capped at 32. |
 | `batchSize` | GPU candidates per batch, from 64 to 1048576; otherwise device defaults apply. |
 | `onFallback(error)` | Called for each automatic GPU attempt that fails; `error.backend` names it. Invalid inputs and cancellation do not trigger fallback. |
-| `signal` | An AbortSignal-compatible object; cancellation rejects with `AbortError` and `ABORT_ERR`. Bare requires a caller-provided controller implementation. |
+| `signal` | An AbortSignal-compatible object; cancellation rejects with `AbortError` and `ABORT_ERR`. Bare requires a caller-provided controller implementation; Node.js can use `AbortController`. |
 | `allowSoftware` | Boolean, default `false`; enables software Vulkan and OpenCL devices for correctness testing. |
 | `addon` | Optional native addon path override, primarily for diagnostics. |
 | `cacheDirectory` | Absolute directory for compiled OpenCL/HIP kernels, or `false` to disable caching. |
@@ -62,6 +63,24 @@ entries expose each GPU search function directly.
 `findVanityKey.benchmark(type, config, { backend, batchSize, batches, allowSoftware })`
 runs fixed work on one GPU backend (`vulkan` by default); `batches` defaults to 10
 and accepts 1 to 100000. Benchmarks never fall back to another backend or CPU.
+
+### Node.js
+
+Under Node.js the same API runs the search in a Bare child process. Bare is found
+in this order: the `PEAR_VANITY_BARE` environment variable, the `bare-runtime`
+package (an optional peer dependency), then a `bare` command on `PATH`.
+
+```sh
+npm install pear-vanity-gpu bare-runtime
+```
+
+`bare-runtime` adds a prebuilt Bare for the current platform (about 100 MB). If no
+Bare is found, calls reject with `ERR_BARE_NOT_FOUND` and installation instructions;
+a Bare older than 1.36.0 rejects with `ERR_BARE_VERSION`. Results, errors,
+`onFallback` calls and `AbortSignal` cancellation behave as under Bare, and the
+promise settles only after the child process exits. Touch results cross a local
+pipe from the child process as hex before becoming Node buffers; nothing leaves the
+machine, but the secret key does pass through that pipe.
 
 ## GPU backends
 
@@ -253,6 +272,7 @@ npm rebuild bare-runtime --ignore-scripts
 npm run lint
 npm run prebuild
 npm test
+npm run test:node
 PEAR_TEST_VULKAN=1 PEAR_TEST_VULKAN_SOFTWARE=1 npm test
 PEAR_TEST_OPENCL=1 PEAR_TEST_OPENCL_SOFTWARE=1 npm test
 PEAR_TEST_HIP=1 npm test

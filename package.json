@@ -1,13 +1,26 @@
 {
   "name": "pear-vanity-gpu",
   "version": "0.1.0",
-  "description": "CPU, Vulkan, OpenCL and HIP vanity searches for Hypercore keys on Bare",
+  "description": "CPU, Vulkan, OpenCL and HIP vanity searches for Hypercore keys on Bare, usable from Node.js",
   "main": "index.js",
   "exports": {
-    ".": "./index.js",
-    "./vulkan": "./lib/vulkan.js",
-    "./opencl": "./lib/opencl.js",
-    "./hip": "./lib/hip.js"
+    ".": {
+      "bare": "./index.js",
+      "default": "./node/index.js"
+    },
+    "./vulkan": {
+      "bare": "./lib/vulkan.js",
+      "default": "./node/vulkan.js"
+    },
+    "./opencl": {
+      "bare": "./lib/opencl.js",
+      "default": "./node/opencl.js"
+    },
+    "./hip": {
+      "bare": "./lib/hip.js",
+      "default": "./node/hip.js"
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "index.js",
@@ -15,6 +28,7 @@
     "binding.cc",
     "CMakeLists.txt",
     "lib",
+    "node",
     "native",
     "prebuilds",
     "scripts",
@@ -25,6 +39,7 @@
   ],
   "scripts": {
     "test": "bare test/vanity.test.js",
+    "test:node": "node --test test/node.test.js",
     "build": "cmake -S . -B out/addon -DCMAKE_BUILD_TYPE=Release && cmake --build out/addon --config Release",
     "prebuild": "npm run build && cmake --install out/addon --config Release --prefix prebuilds && bare scripts/configure-prebuilds.js",
     "benchmark": "bare scripts/benchmark.js",
@@ -38,6 +53,7 @@
   },
   "dependencies": {
     "bare-os": "^3.9.3",
+    "bare-pipe": "^4.4.0",
     "bare-worker": "^4.4.0",
     "hyper-multisig": "^2.0.0",
     "hypercore": "^11.33.5",
@@ -70,5 +86,13 @@
       "default": "./lib/unsupported.js"
     }
   },
-  "author": "Jan Keith Darunday <jkcdarunday@gmail.com>"
+  "author": "Jan Keith Darunday <jkcdarunday@gmail.com>",
+  "peerDependencies": {
+    "bare-runtime": ">=1.36.0"
+  },
+  "peerDependenciesMeta": {
+    "bare-runtime": {
+      "optional": true
+    }
+  }
 }

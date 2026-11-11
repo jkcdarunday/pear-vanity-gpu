@@ -18,6 +18,7 @@ jobs:
       - run: npm rebuild bare-runtime --ignore-scripts
       - run: npm run lint:js
       - run: npm test
+      - run: npm run test:node
       - run: npm run pack
       - name: Install packed production dependencies
         run: >-
@@ -27,3 +28,20 @@ jobs:
         run: >-
           npm exec -- bare --eval
           "require('./out/consumer/node_modules/pear-vanity-gpu')('', 'touch', undefined, { workers: 1 }).then(pair => { if (pair.publicKey.length !== 32) throw new Error('Invalid public key') }).catch(err => { console.error(err); Bare.exitCode = 1 })"
+      # Outside the repository, so the repo's bare-runtime dev dependency is not found.
+      - name: Node.js without Bare reports how to install it
+        shell: bash
+        run: |
+          consumer="$(cygpath -u "$RUNNER_TEMP" 2>/dev/null || echo "$RUNNER_TEMP")/node-consumer"
+          mkdir -p "$consumer"
+          cp ./*.tgz "$consumer/"
+          cd "$consumer"
+          npm init -y > /dev/null
+          npm install --no-audit --no-fund ./pear-vanity-gpu-*.tgz
+          node -e "require('pear-vanity-gpu')('').then(() => process.exit(1), err => { if (err.code !== 'ERR_BARE_NOT_FOUND') throw err; console.log(err.message) })"
+      - name: Node.js uses an installed Bare runtime
+        shell: bash
+        run: |
+          cd "$(cygpath -u "$RUNNER_TEMP" 2>/dev/null || echo "$RUNNER_TEMP")/node-consumer"
+          npm install --no-audit --no-fund bare-runtime@1.36.0
+          node -e "require('pear-vanity-gpu')('', 'touch', undefined, { workers: 1 }).then(pair => { if (pair.secretKey.length !== 64) throw new Error('Invalid secret key') })"
