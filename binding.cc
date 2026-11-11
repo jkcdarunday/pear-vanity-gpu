@@ -115,6 +115,22 @@ static js_value_t *step(js_env_t *env, js_callback_info_t *info) {
   }
 }
 
+static js_value_t *describe(js_env_t *env, js_callback_info_t *info) {
+  try {
+    auto handle = get(env, info);
+    if (!handle->search)
+      throw std::runtime_error("Search has been closed");
+    auto value = handle->search->describe();
+    js_value_t *result;
+    api(js_create_string_utf8(env, reinterpret_cast<const utf8_t *>(value.data()),
+                              value.size(), &result));
+    return result;
+  } catch (const std::exception &e) {
+    js_throw_error(env, "ERR_VANITY_GPU", e.what());
+    return nullptr;
+  }
+}
+
 static js_value_t *close(js_env_t *env, js_callback_info_t *info) {
   try {
     get(env, info)->search.reset();
@@ -125,9 +141,9 @@ static js_value_t *close(js_env_t *env, js_callback_info_t *info) {
 }
 
 static js_value_t *pear_vanity_gpu_exports(js_env_t *env, js_value_t *exports) {
-  const char *names[] = {"create", "step", "close"};
-  js_function_cb callbacks[] = {create, step, close};
-  for (int i = 0; i < 3; i++) {
+  const char *names[] = {"create", "step", "info", "close"};
+  js_function_cb callbacks[] = {create, step, describe, close};
+  for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
     js_value_t *value;
     api(js_create_function(env, names[i], -1, callbacks[i], nullptr, &value));
     api(js_set_named_property(env, exports, names[i], value));

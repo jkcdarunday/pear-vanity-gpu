@@ -45,3 +45,5 @@ jobs:
           cd "$(cygpath -u "$RUNNER_TEMP" 2>/dev/null || echo "$RUNNER_TEMP")/node-consumer"
           npm install --no-audit --no-fund bare-runtime@1.36.0
           node -e "require('pear-vanity-gpu')('', 'touch', undefined, { workers: 1 }).then(pair => { if (pair.secretKey.length !== 64) throw new Error('Invalid secret key') })"
+          npx --no-install pear-vanity-gpu p --backend cpu --workers 1 --json > key.json
+          node -e "const k = require('./key.json'); if (!k.key.startsWith('p') || k.secretKey.length !== 128) throw new Error('Invalid command output')"

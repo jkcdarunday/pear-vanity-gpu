@@ -391,6 +391,16 @@ struct Search {
     return hex(reinterpret_cast<const unsigned char *>(ns.data()), ns.size());
   }
 
+  // Device and batch details for progress reporting; never includes search secrets.
+  std::string describe() const {
+    std::ostringstream json;
+    json << "{\"backend\":" << jsonString(gpu->backend)
+         << ",\"device\":" << jsonString(gpu->name)
+         << ",\"software\":" << (gpu->software ? "true" : "false")
+         << ",\"batchSize\":" << batch << "}";
+    return json.str();
+  }
+
   std::string report() {
     finished = true;
     const double seconds =

@@ -100,3 +100,41 @@ test('a missing or outdated Bare explains how to install one', () => {
     }
   }
 })
+
+test('progress reports cross the process boundary', async () => {
+  const controller = new AbortController()
+  const reports = []
+  const pending = findVanityKey(z32.repeat(2).slice(0, 12), 'touch', undefined, {
+    backend: 'cpu',
+    workers: 1,
+    signal: controller.signal,
+    onProgress: (progress) => reports.push(progress)
+  })
+
+  setTimeout(() => controller.abort(), 1500)
+  await assert.rejects(pending, { code: 'ABORT_ERR' })
+
+  assert.ok(reports.length >= 2)
+  assert.strictEqual(reports[0].backend, 'cpu')
+  assert.ok(reports.at(-1).candidates > 0 && reports.at(-1).candidatesPerSecond > 0)
+  await assert.rejects(findVanityKey('p', 'touch', undefined, { onProgress: 1 }), TypeError)
+})
+
+test('the command runs from Node.js through Bare', () => {
+  const bin = path.join(__dirname, '..', 'bin', 'pear-vanity-gpu.js')
+  const result = childProcess.spawnSync(
+    process.execPath,
+    [bin, 'pe', '--backend=cpu', '--workers=1', '--json'],
+    { cwd: os.tmpdir(), encoding: 'utf8' }
+  )
+  const pair = JSON.parse(result.stdout)
+
+  assert.strictEqual(result.status, 0)
+  assert.ok(pair.key.startsWith('pe'))
+  assert.strictEqual(pair.secretKey.length, 128)
+
+  const usage = childProcess.spawnSync(process.execPath, [bin, 'Not z32'], { encoding: 'utf8' })
+
+  assert.strictEqual(usage.status, 2)
+  assert.match(usage.stderr, /not a z32 prefix/)
+})

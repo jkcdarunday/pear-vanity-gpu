@@ -47,6 +47,7 @@ secret keys and avoid logging them.
 | `workers` | CPU workers, from 1 to 256; defaults to available parallelism capped at 32. |
 | `batchSize` | GPU candidates per batch, from 64 to 1048576; otherwise device defaults apply. |
 | `onFallback(error)` | Called for each automatic GPU attempt that fails; `error.backend` names it. Invalid inputs and cancellation do not trigger fallback. |
+| `onProgress(progress)` | Called about every 250 ms with `{ backend, device, candidates, seconds, candidatesPerSecond }` for the backend currently searching. `device` names the GPU and is absent on CPU; `candidates` and `seconds` restart when falling back. The rate is measured after setup and kernel compilation. |
 | `signal` | An AbortSignal-compatible object; cancellation rejects with `AbortError` and `ABORT_ERR`. Bare requires a caller-provided controller implementation; Node.js can use `AbortController`. |
 | `allowSoftware` | Boolean, default `false`; enables software Vulkan and OpenCL devices for correctness testing. |
 | `addon` | Optional native addon path override, primarily for diagnostics. |
@@ -77,10 +78,32 @@ npm install pear-vanity-gpu bare-runtime
 `bare-runtime` adds a prebuilt Bare for the current platform (about 100 MB). If no
 Bare is found, calls reject with `ERR_BARE_NOT_FOUND` and installation instructions;
 a Bare older than 1.36.0 rejects with `ERR_BARE_VERSION`. Results, errors,
-`onFallback` calls and `AbortSignal` cancellation behave as under Bare, and the
+`onFallback` and `onProgress` calls and `AbortSignal` cancellation behave as under Bare, and the
 promise settles only after the child process exits. Touch results cross a local
 pipe from the child process as hex before becoming Node buffers; nothing leaves the
 machine, but the secret key does pass through that pipe.
+
+## Command line
+
+```sh
+npx pear-vanity-gpu pear
+npx pear-vanity-gpu pear --out pear-key.json
+npx pear-vanity-gpu pe --multisig --namespace demo --key <signer> --key <signer>
+npx pear-vanity-gpu benchmark touch --backend all
+```
+
+The command prints the Hypercore key, public key and secret key on stdout, or JSON
+with `--json`. `--out FILE` writes the key pair to a new file readable only by you
+and keeps the secret key off the screen; an existing file is never overwritten.
+In a terminal it shows a live display with the backend, device, rate, candidates
+tried and the chance that a search this long would have found a match; press `q` or
+Ctrl-C to stop (exit code 130). It restores the screen when it ends and leaves
+a one-line summary. Status goes to stderr, so piping stdout captures only the result.
+`--quiet` silences stderr. `--backend`, `--workers`, `--batch` and `--allow-software`
+match the API options, and `pear-vanity-gpu --help` lists everything.
+
+The command needs Bare the same way the API does under [Node.js](#nodejs). From a
+Bare or Pear environment run `bare node_modules/pear-vanity-gpu/bin/pear-vanity-gpu.js`.
 
 ## GPU backends
 

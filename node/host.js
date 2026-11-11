@@ -4,6 +4,7 @@
 // process (lib/host.js) and exchange newline-delimited JSON over its stdio.
 const childProcess = require('child_process')
 const fs = require('fs')
+const os = require('os')
 const path = require('path')
 
 const root = path.join(__dirname, '..')
@@ -112,6 +113,47 @@ function compare(left, right) {
 exports.findBare = findBare
 exports.INSTALL_HINT = INSTALL_HINT
 
+// Runs a package script in Bare with the terminal attached, for the command-line
+// tool. Arguments and the working directory travel in the environment so that a
+// Windows .cmd shim never sees user input on its command line.
+exports.exec = function exec(script, args) {
+  const bare = findBare()
+  const err = bare ? checkVersion(bare) : new Error(INSTALL_HINT)
+
+  if (err) {
+    console.error(err.message)
+    process.exitCode = 1
+    return
+  }
+
+  const child = childProcess.spawn(...command(bare, script), {
+    cwd: root,
+    shell: bare.shell,
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      PEAR_VANITY_CLI_ARGS: JSON.stringify(args),
+      PEAR_VANITY_CLI_CWD: process.cwd()
+    }
+  })
+  // Ctrl-C reaches the Bare process too, which stops the search and exits.
+  const ignore = () => {}
+  const forward = () => child.kill('SIGTERM')
+
+  process.on('SIGINT', ignore)
+  process.on('SIGTERM', forward)
+
+  child.on('error', (e) => {
+    console.error(e.code === 'ENOENT' ? INSTALL_HINT : e.message)
+    process.exitCode = 1
+  })
+  child.on('exit', (code, signal) => {
+    process.off('SIGINT', ignore)
+    process.off('SIGTERM', forward)
+    process.exitCode = code ?? 128 + (os.constants.signals[signal] || 1)
+  })
+}
+
 exports.call = function call(entry, method, args, options) {
   return new Promise((resolve, reject) => {
     const bare = findBare()
@@ -126,10 +168,14 @@ exports.call = function call(entry, method, args, options) {
 
     if (unusable) throw unusable
 
-    const { signal, onFallback } = options && typeof options === 'object' ? options : {}
+    const { signal, onFallback, onProgress } = options && typeof options === 'object' ? options : {}
 
     if (onFallback !== undefined && typeof onFallback !== 'function') {
       throw new TypeError('onFallback must be a function')
+    }
+
+    if (onProgress !== undefined && typeof onProgress !== 'function') {
+      throw new TypeError('onProgress must be a function')
     }
 
     if (
@@ -200,6 +246,8 @@ exports.call = function call(entry, method, args, options) {
 
         if (message.event === 'fallback') {
           if (onFallback) onFallback(decodeError(message.error))
+        } else if (message.event === 'progress') {
+          if (onProgress) onProgress(message.progress)
         } else if (message.error || message.result) {
           reply = message
         }
@@ -219,7 +267,13 @@ exports.call = function call(entry, method, args, options) {
       entry,
       method,
       args: args.map((arg, i) =>
-        i === args.length - 1 ? hostOptions(arg, Boolean(onFallback), Boolean(signal)) : arg
+        i === args.length - 1
+          ? hostOptions(arg, {
+              hasFallback: Boolean(onFallback),
+              hasProgress: Boolean(onProgress),
+              hasSignal: Boolean(signal)
+            })
+          : arg
       )
     }
 
@@ -227,12 +281,12 @@ exports.call = function call(entry, method, args, options) {
   })
 }
 
-function hostOptions(options, hasFallback, hasSignal) {
+function hostOptions(options, flags) {
   if (!options || typeof options !== 'object' || Array.isArray(options)) return options
 
-  const { signal, onFallback, ...rest } = options
+  const { signal, onFallback, onProgress, ...rest } = options
 
-  return { ...rest, hasFallback, hasSignal }
+  return { ...rest, ...flags }
 }
 
 // Buffers and typed arrays (such as multisig public keys) cross as hex.

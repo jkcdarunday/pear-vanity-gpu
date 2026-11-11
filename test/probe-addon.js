@@ -5,7 +5,7 @@
 // prebuild fails even though the CPU suite never touches the addon.
 const binding = require('../binding')
 
-for (const name of ['create', 'step', 'close']) {
+for (const name of ['create', 'step', 'info', 'close']) {
   if (typeof binding[name] !== 'function') throw new Error('Addon is missing ' + name)
 }
 

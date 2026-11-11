@@ -9,6 +9,7 @@ const HyperMultisig = require('hyper-multisig')
 const hid = require('hypercore-id-encoding')
 const validation = require('./lib/options')
 const runWorkers = require('./lib/workers')
+const progress = require('./lib/progress')
 
 if (!Worker.isMainThread && Worker.workerData && Worker.workerData._vanityWorker) runWorker()
 
@@ -63,9 +64,29 @@ function cpuVanity(start, type, config, options) {
 
   return runWorkers(
     __filename,
-    Array.from({ length: workers }, () => ({ _vanityWorker: true, target: start, type, config })),
-    options
+    Array.from({ length: workers }, () => ({
+      _vanityWorker: true,
+      target: start,
+      type,
+      config,
+      progress: Boolean(options.onProgress)
+    })),
+    options,
+    progress.reporter('cpu', options.onProgress)
   )
+}
+
+// Workers check for termination and report progress every 1000 candidates.
+function pacer() {
+  const count = Worker.workerData.progress
+    ? progress.counter((message) => Worker.parentPort.postMessage(message))
+    : null
+
+  return () => {
+    if (count) count(1000)
+
+    return new Promise((resolve) => setImmediate(resolve))
+  }
 }
 
 async function multisigVanity(target, config) {
@@ -75,13 +96,13 @@ async function multisigVanity(target, config) {
     ? namespace.split('$').slice(0, -1).join('$')
     : namespace
 
+  const pause = pacer()
   let attempts = 0
 
   while (true) {
     attempts++
 
-    // Yield to events to allow worker to handle termination
-    if (attempts % 1000 === 0) await new Promise((resolve) => setImmediate(resolve))
+    if (attempts % 1000 === 0) await pause()
 
     const newNamespace =
       attempts > 1 ? `${namespaceBase}$${z32.encode(crypto.randomBytes(32))}` : namespace
@@ -98,13 +119,13 @@ async function multisigVanity(target, config) {
 }
 
 async function touchVanity(target) {
+  const pause = pacer()
   let attempts = 0
 
   while (true) {
     attempts++
 
-    // Yield to events to allow worker to handle termination
-    if (attempts % 1000 === 0) await new Promise((resolve) => setImmediate(resolve))
+    if (attempts % 1000 === 0) await pause()
 
     const keyPair = crypto.keyPair()
     const z = z32.encode(Hypercore.key({ signers: [{ publicKey: keyPair.publicKey }] }))

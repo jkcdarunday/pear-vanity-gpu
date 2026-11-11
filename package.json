@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "CPU, Vulkan, OpenCL and HIP vanity searches for Hypercore keys on Bare, usable from Node.js",
   "main": "index.js",
+  "bin": {
+    "pear-vanity-gpu": "bin/pear-vanity-gpu.js"
+  },
   "exports": {
     ".": {
       "bare": "./index.js",
@@ -23,6 +26,7 @@
     "./package.json": "./package.json"
   },
   "files": [
+    "bin",
     "index.js",
     "binding.js",
     "binding.cc",
@@ -38,7 +42,7 @@
     ".clang-format"
   ],
   "scripts": {
-    "test": "bare test/vanity.test.js",
+    "test": "bare test/vanity.test.js && bare test/cli.test.js",
     "test:node": "node --test test/node.test.js",
     "build": "cmake -S . -B out/addon -DCMAKE_BUILD_TYPE=Release && cmake --build out/addon --config Release",
     "prebuild": "npm run build && cmake --install out/addon --config Release --prefix prebuilds && bare scripts/configure-prebuilds.js",
@@ -52,8 +56,13 @@
     "test:native": "cmake -S . -B out/addon -DVANITY_TESTS=ON && cmake --build out/addon --config Release && ctest --test-dir out/addon -C Release --output-on-failure"
   },
   "dependencies": {
+    "bare-fs": "^4.8.4",
     "bare-os": "^3.9.3",
+    "bare-path": "^3.1.2",
     "bare-pipe": "^4.4.0",
+    "bare-signals": "^5.0.0",
+    "bare-tty": "^5.2.2",
+    "bare-tui": "^0.3.0",
     "bare-worker": "^4.4.0",
     "hyper-multisig": "^2.0.0",
     "hypercore": "^11.33.5",
@@ -63,9 +72,9 @@
     "z32": "^1.1.0"
   },
   "devDependencies": {
-    "bare-fs": "^4.7.4",
     "bare-make": "^2.0.1",
     "bare-runtime": "^1.36.0",
+    "bare-subprocess": "^6.2.2",
     "brittle": "^4.0.0",
     "cmake-bare": "^1.10.0",
     "lunte": "^1.6.0",
