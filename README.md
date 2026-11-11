@@ -178,17 +178,19 @@ AMD Radeon RX 7900 XTX, Mesa RADV 26.2.6, AMD OpenCL 3581.0, ROCm 7.2 and Bare
 uses three signers and quorum two; both modes check a ten-character prefix.
 
 Batch throughput, median of four runs with batch sizes rotated (33.5M touch and
-67.1M multisig candidates per run):
+67.1M multisig candidates per run). The speedup is against the CPU baseline below:
 
-| Workload | Batch | Vulkan | OpenCL | HIP |
-| --- | ---: | ---: | ---: | ---: |
-| Touch | 65,536 | 26.4 M/s | 40.1 M/s | 41.2 M/s |
-| Touch | 1,048,576 | 30.3 M/s | 49.1 M/s | 49.5 M/s |
-| Multisig | 65,536 | 395 M/s | 548 M/s | 327 M/s |
-| Multisig | 1,048,576 | 485 M/s | 799 M/s | 377 M/s |
+| Workload | Batch | CPU, 32 threads | Vulkan | OpenCL | HIP |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Touch | 65,536 | | 26.4 M/s | 40.1 M/s | 41.2 M/s |
+| Touch | 1,048,576 | ~1.09 M/s | 30.3 M/s (~28×) | 49.1 M/s (~45×) | **49.5 M/s (~45×)** |
+| Multisig | 65,536 | | 395 M/s | 548 M/s | 327 M/s |
+| Multisig | 1,048,576 | ~1.77 M/s | 485 M/s (~274×) | **799 M/s (~451×)** | 377 M/s (~213×) |
 
 Batch throughput covers dispatch, readback and eight CPU-verified samples per
-batch; it excludes startup, compilation and teardown.
+batch; it excludes startup, compilation and teardown. The CPU rates are the
+full-command CPU times below divided into the candidate counts, so they include
+process startup and the GPU ratios are slightly generous.
 
 Full command, median of three rotated runs at batch 1048576, from launching
 `bare scripts/benchmark.js` until it exits:
@@ -202,6 +204,17 @@ The CPU baseline runs 32 concurrent single-thread Bare processes. These fixed
 workloads are short, so setup (about 0.11s for Vulkan, 0.15s for HIP and 0.20s
 for OpenCL) dominates multisig; longer searches converge on the batch-throughput
 ratios. Results apply to this host and workload.
+
+Expected time to find a match, calculated from the throughput above rather than
+timed. A z32 character carries 5 bits, so an n-character prefix needs 32ⁿ
+candidates on average; real searches vary widely because a match is luck.
+
+| Prefix | Candidates | Touch, CPU | Touch, HIP | Multisig, CPU | Multisig, OpenCL |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 5 characters | 33.5M | ~31 s | ~1 s | ~19 s | ~0.25 s |
+| 6 characters | 1.07B | ~16 min | ~22 s | ~10 min | ~1.5 s |
+| 7 characters | 34B | ~8.7 h | ~12 min | ~5.4 h | ~43 s |
+| 8 characters | 1.1T | ~12 days | ~6 h | ~7 days | ~23 min |
 
 ## Develop and package
 
