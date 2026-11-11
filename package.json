@@ -73,6 +73,14 @@
     "prettier-config-holepunch": "^2.0.0"
   },
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jkcdarunday/pear-vanity-gpu.git"
+  },
+  "homepage": "https://github.com/jkcdarunday/pear-vanity-gpu#readme",
+  "bugs": {
+    "url": "https://github.com/jkcdarunday/pear-vanity-gpu/issues"
+  },
   "addon": true,
   "engines": {
     "bare": ">=1.36.0"

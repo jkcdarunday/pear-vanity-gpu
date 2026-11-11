@@ -165,3 +165,38 @@ jobs:
           name: release-candidate
           path: '*.tgz'
           if-no-files-found: error
+
+  # Pushing a tag such as v0.1.0 publishes the release candidate tested above,
+  # byte for byte. Authentication uses npm trusted publishing (OIDC), so no npm
+  # token is stored in the repository.
+  publish:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-24.04
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm 11.5.1 or newer.
+      - run: npm install -g 'npm@^11.5.1'
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-candidate
+      - name: Publish
+        run: |
+          tarball=$(ls pear-vanity-gpu-*.tgz)
+          version=$(tar -xOzf "$tarball" package/package.json | jq -r .version)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package version $version" >&2
+            exit 1
+          fi
+          case "$version" in
+            *-*) tag=next ;;
+            *) tag=latest ;;
+          esac
+          npm publish "./$tarball" --access public --tag "$tag"

@@ -339,6 +339,22 @@ suite there, then packs all five into a `release-candidate` tarball artifact. HI
 requires AMD hardware and must be validated outside hosted CI with
 `PEAR_TEST_HIP=1 npm test` and `VANITY_NATIVE_BACKENDS=hip npm run test:native`.
 
+### Releasing
+
+Bump `version` in `package.json`, commit, then push a matching tag:
+
+```sh
+npm version 0.2.0 --no-git-tag-version
+git commit -am 'Release 0.2.0'
+git tag v0.2.0
+git push origin main v0.2.0
+```
+
+The `Prebuilds` workflow builds and tests every prebuild, packs the release
+candidate and publishes that exact tarball to npm. A version with a prerelease
+suffix such as `0.2.0-beta.1` is published under the `next` dist-tag. Publishing
+uses npm trusted publishing, so the repository holds no npm token.
+
 ## License
 
 Copyright 2026 Jan Keith Darunday. Licensed under the Apache License, Version 2.0.
