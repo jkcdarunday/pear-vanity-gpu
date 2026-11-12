@@ -1,6 +1,6 @@
 {
   "name": "pear-vanity-gpu",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "CPU, Vulkan, OpenCL and HIP vanity searches for Hypercore keys on Bare, usable from Node.js",
   "main": "index.js",
   "bin": {
