@@ -353,8 +353,9 @@ without checking its runtime dependencies and compatibility baseline.
 
 Formatting uses Prettier and Lunte for JavaScript and clang-format for C++/GLSL.
 `npm run format` applies all three; `npm run lint` checks without modifying files.
-The `Bare tests` workflow runs the CPU suite on Linux, macOS and Windows. The
-`Prebuilds` workflow builds Linux x64 and arm64 addons in Ubuntu 22.04 containers
+The `Bare tests` workflow runs the CPU suite on Linux, macOS and Windows for every
+branch push and pull request. The `Prebuilds` workflow runs for pull requests,
+release tags and manual dispatch (Actions → Prebuilds → Run workflow). It builds Linux x64 and arm64 addons in Ubuntu 22.04 containers
 and tests them with software Vulkan (llvmpipe), software OpenCL (PoCL), native
 cryptographic regression checks and a linkage check. It also builds macOS arm64, macOS x64 and
 Windows x64 addons, loads each one with `test/probe-addon.js` and runs the CPU
