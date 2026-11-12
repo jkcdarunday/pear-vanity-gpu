@@ -108,10 +108,13 @@ test('progress reports cross the process boundary', async () => {
     backend: 'cpu',
     workers: 1,
     signal: controller.signal,
-    onProgress: (progress) => reports.push(progress)
+    // Slow CI machines take a while to start Bare and its workers, so stop
+    // after a few reports rather than after a fixed time.
+    onProgress: (progress) => {
+      if (reports.push(progress) === 3) controller.abort()
+    }
   })
 
-  setTimeout(() => controller.abort(), 1500)
   await assert.rejects(pending, { code: 'ABORT_ERR' })
 
   assert.ok(reports.length >= 2)

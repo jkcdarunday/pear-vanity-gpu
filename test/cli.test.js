@@ -30,12 +30,13 @@ test('CPU searches report progress with a measured rate', async (t) => {
     backend: 'cpu',
     workers: 2,
     signal,
-    onProgress: (progress) => reports.push(progress)
+    // Stop after a few reports rather than after a fixed time, for slow machines.
+    onProgress: (progress) => {
+      if (reports.push(progress) === 3) signal.abort()
+    }
   })
-  const assertion = t.exception(pending, /aborted/)
 
-  setTimeout(() => signal.abort(), 1500)
-  await assertion
+  await t.exception(pending, /aborted/)
 
   t.ok(reports.length >= 2, 'several reports')
 
@@ -112,6 +113,26 @@ test('the command rejects bad input with usage errors', (t) => {
     t.is(stdout, '')
   }
 
-  t.ok(/Usage: pear-vanity-gpu <prefix>/.test(run(['--help']).stdout))
+  t.ok(/pear-vanity-gpu \[flags\] <prefix>/.test(run(['--help']).stdout))
+  t.ok(/pear-vanity-gpu benchmark \[flags\] \[type\]/.test(run(['benchmark', '-h']).stdout))
+  t.is(run(['benchmark', 'nope']).status, 2)
   t.is(run(['--version']).stdout.trim(), require('../package.json').version)
+})
+
+test('the benchmark command measures the CPU', (t) => {
+  const { status, stdout } = run([
+    'benchmark',
+    'touch',
+    '-b',
+    'cpu',
+    '--batch',
+    '64',
+    '--batches',
+    '2'
+  ])
+  const result = JSON.parse(stdout)
+
+  t.is(status, 0)
+  t.is(result.backend, 'cpu')
+  t.is(result.candidates, 128)
 })

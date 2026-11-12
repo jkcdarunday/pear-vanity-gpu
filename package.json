@@ -68,6 +68,7 @@
     "hypercore": "^11.33.5",
     "hypercore-crypto": "^3.5.0",
     "hypercore-id-encoding": "^1.3.0",
+    "paparam": "^1.15.0",
     "pear-gracedown": "^1.0.4",
     "z32": "^1.1.0"
   },
