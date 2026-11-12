@@ -99,7 +99,7 @@ In a terminal it shows a live display with the backend, device, rate, candidates
 tried and the chance that a search this long would have found a match; press `q` or
 Ctrl-C to stop (exit code 130). It restores the screen when it ends and leaves
 a one-line summary. Status goes to stderr, so piping stdout captures only the result.
-A prefix that is not z32 gets lookalike suggestions, for example `holepunch` → `ho1epunch` or `hoiepunch`. `--quiet` silences stderr. `--backend`, `--workers`, `--batch` and `--allow-software`
+A prefix that is not z32 gets lookalike suggestions, for example `holepunch` → `ho1epunch` or `hoiepunch`; in a terminal a menu lets you pick one to search for, or quit, and elsewhere the command exits with the suggestions and code 2. `--quiet` silences stderr. `--backend`, `--workers`, `--batch` and `--allow-software`
 match the API options, and `pear-vanity-gpu --help` lists everything.
 
 The command needs Bare the same way the API does under [Node.js](#nodejs). From a

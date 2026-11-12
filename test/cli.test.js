@@ -158,3 +158,35 @@ test('non-z32 prefixes get lookalike z32 suggestions', (t) => {
   t.ok(stderr.includes('"l" is not in the z32 alphabet'))
   t.ok(stderr.includes('Try ho1epunch or hoiepunch'))
 })
+
+test('the prefix menu picks a suggestion or quits', (t) => {
+  const { KeyMsg } = require('bare-tui')
+  const { PrefixModel } = require('../lib/tui')
+  const press = (name) => new KeyMsg({ name, ctrl: false, meta: false, shift: false })
+  const menu = () =>
+    new PrefixModel({ problem: '"pl" is not z32', hint: '', suggestions: ['p1', 'pi'] })
+
+  const enter = menu()
+  enter.update(press('down'))
+  enter.update(press('return'))
+  t.is(enter.choice, 'pi', 'arrow keys then enter')
+
+  const number = menu()
+  number.update(press('2'))
+  t.is(number.choice, 'pi', 'number key')
+
+  const first = menu()
+  first.update(press('return'))
+  t.is(first.choice, 'p1', 'enter takes the first suggestion')
+
+  const quitRow = menu()
+  quitRow.update(press('down'))
+  quitRow.update(press('down'))
+  quitRow.update(press('return'))
+  t.is(quitRow.choice, null, 'the quit row quits')
+
+  const q = menu()
+  q.update(press('q'))
+  t.is(q.choice, null, 'q quits')
+  t.ok(q.view().includes('Search for a z32 spelling instead?'))
+})
