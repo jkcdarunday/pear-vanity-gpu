@@ -374,8 +374,8 @@ git push origin main v0.2.0
 ```
 
 The `Prebuilds` workflow builds and tests every prebuild, packs the release
-candidate and stages that exact tarball on npm. Approve the staged version on
-npmjs.com, with two-factor authentication, to make it live. A version with a prerelease
+candidate and, once you approve the `npm` environment on the run page,
+publishes that exact tarball to npm. A version with a prerelease
 suffix such as `0.2.0-beta.1` is published under the `next` dist-tag. Publishing
 uses npm trusted publishing, so the repository holds no npm token.
 

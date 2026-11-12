@@ -166,10 +166,9 @@ jobs:
           path: '*.tgz'
           if-no-files-found: error
 
-  # Pushing a tag such as v0.1.0 stages the release candidate tested above, byte
-  # for byte, on npm. Authentication uses npm trusted publishing (OIDC), so no
-  # npm token is stored in the repository. A maintainer then approves the staged
-  # version on npmjs.com with two-factor authentication before it goes live.
+  # Pushing a tag such as v0.1.0 publishes the release candidate tested above,
+  # byte for byte, once a maintainer approves the npm environment. Authentication
+  # uses npm trusted publishing (OIDC), so no npm token is stored in the repository.
   publish:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     needs: package
@@ -183,12 +182,12 @@ jobs:
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
-      # Staged publishing needs npm 11.15.0 or newer.
-      - run: npm install -g 'npm@^11.15.0'
+      # Trusted publishing needs npm 11.5.1 or newer.
+      - run: npm install -g 'npm@^11.5.1'
       - uses: actions/download-artifact@v4
         with:
           name: release-candidate
-      - name: Stage for approval on npm
+      - name: Publish
         run: |
           tarball=$(ls pear-vanity-gpu-*.tgz)
           version=$(tar -xOzf "$tarball" package/package.json | jq -r .version)
@@ -200,4 +199,4 @@ jobs:
             *-*) tag=next ;;
             *) tag=latest ;;
           esac
-          npm stage publish "./$tarball" --access public --tag "$tag"
+          npm publish "./$tarball" --access public --tag "$tag"
