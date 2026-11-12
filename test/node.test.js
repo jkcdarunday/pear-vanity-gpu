@@ -139,5 +139,5 @@ test('the command runs from Node.js through Bare', () => {
   const usage = childProcess.spawnSync(process.execPath, [bin, 'Not z32'], { encoding: 'utf8' })
 
   assert.strictEqual(usage.status, 2)
-  assert.match(usage.stderr, /not a z32 prefix/)
+  assert.match(usage.stderr, /is not z32/)
 })
