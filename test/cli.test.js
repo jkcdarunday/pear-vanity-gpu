@@ -136,3 +136,25 @@ test('the benchmark command measures the CPU', (t) => {
   t.is(result.backend, 'cpu')
   t.is(result.candidates, 128)
 })
+
+test('non-z32 prefixes get lookalike z32 suggestions', (t) => {
+  const suggest = require('../lib/suggest')
+
+  t.alike(suggest('holepunch').suggestions, ['ho1epunch', 'hoiepunch'])
+  t.alike(suggest('Pear'), { capitals: true, missing: [], dropped: [], suggestions: ['pear'] })
+  t.alike(suggest('keet-v2'), {
+    capitals: false,
+    missing: ['-', 'v', '2'],
+    dropped: ['-'],
+    suggestions: ['keetuz', 'keetyz']
+  })
+  t.is(suggest('HELLO0').suggestions[0], 'he11oo')
+  t.alike(suggest('!!!').suggestions, [], 'nothing to suggest')
+
+  const { status, stdout, stderr } = run(['holepunch'])
+
+  t.is(status, 2)
+  t.is(stdout, '')
+  t.ok(stderr.includes('"l" is not in the z32 alphabet'))
+  t.ok(stderr.includes('Try ho1epunch or hoiepunch'))
+})
